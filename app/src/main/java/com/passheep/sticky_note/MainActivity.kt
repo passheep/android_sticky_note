@@ -144,6 +144,7 @@ class MainActivity : ComponentActivity() {
                     onSetWidgetThemeMode = viewModel::setWidgetThemeMode,
                     onSetWidgetTransparency = viewModel::setWidgetTransparency,
                     onSetWidgetColorfulTextEnabled = viewModel::setWidgetColorfulTextEnabled,
+                    onSetQuickTodoDefaultTodayEnabled = viewModel::setQuickTodoDefaultTodayEnabled,
                     onTestPlatformConnection = viewModel::testPlatformConnection,
                     onRefreshDevices = viewModel::refreshDevicesManually,
                     onSelectDevice = viewModel::selectDevice,

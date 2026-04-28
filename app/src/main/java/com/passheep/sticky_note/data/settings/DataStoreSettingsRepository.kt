@@ -39,6 +39,7 @@ class DataStoreSettingsRepository @Inject constructor(
             widgetColorfulTextEnabled = preferences[PreferenceKeys.WidgetColorfulTextEnabled] ?: true,
             defaultPushType = preferences[PreferenceKeys.DefaultPushType].toPushType(),
             defaultPushPageId = preferences[PreferenceKeys.DefaultPushPageId] ?: 1,
+            quickTodoDefaultTodayEnabled = preferences[PreferenceKeys.QuickTodoDefaultTodayEnabled] ?: false,
         )
     }
 
@@ -110,6 +111,10 @@ class DataStoreSettingsRepository @Inject constructor(
 
     override suspend fun updateDefaultPushPageId(value: Int) {
         dataStore.edit { it[PreferenceKeys.DefaultPushPageId] = value.coerceIn(1, 5) }
+    }
+
+    override suspend fun updateQuickTodoDefaultTodayEnabled(value: Boolean) {
+        dataStore.edit { it[PreferenceKeys.QuickTodoDefaultTodayEnabled] = value }
     }
 }
 

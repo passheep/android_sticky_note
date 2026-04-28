@@ -34,7 +34,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -102,6 +104,7 @@ class MainViewModel @Inject constructor(
                 selectedDeviceName = partial.settings.selectedDeviceName,
                 widgetTransparency = partial.settings.widgetTransparency,
                 widgetColorfulTextEnabled = partial.settings.widgetColorfulTextEnabled,
+                quickTodoDefaultTodayEnabled = partial.settings.quickTodoDefaultTodayEnabled,
                 todos = partial.todos,
                 devices = partial.devices,
                 todoFilter = partial.filter,
@@ -118,6 +121,22 @@ class MainViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = AppUiState(),
     )
+
+    init {
+        viewModelScope.launch {
+            settingsRepository.settings
+                .map { it.quickTodoDefaultTodayEnabled }
+                .distinctUntilChanged()
+                .collect { enabled ->
+                    quickDraft.update { current ->
+                        applyQuickDefaultDueDateIfSafe(
+                            draft = current,
+                            defaultTodayEnabled = enabled,
+                        )
+                    }
+                }
+        }
+    }
 
     fun onPageEntered(route: String) {
         Log.d(TAG, "onPageEntered route=$route")
@@ -204,7 +223,8 @@ class MainViewModel @Inject constructor(
             Log.d(TAG, "submitQuickTodo title=${draft.title}")
             runCatching { cloudTodoStore.createTodo(input) }
                 .onSuccess {
-                    quickDraft.value = QuickTodoDraft()
+                    val settings = settingsRepository.settings.first()
+                    quickDraft.value = defaultQuickTodoDraft(settings.quickTodoDefaultTodayEnabled)
                     emitToast("已创建待办")
                 }
                 .onFailure { error ->
@@ -271,7 +291,8 @@ class MainViewModel @Inject constructor(
             }.onSuccess {
                 editDraft.value = null
                 if (draft.isFromQuickComposer) {
-                    quickDraft.value = QuickTodoDraft()
+                    val settings = settingsRepository.settings.first()
+                    quickDraft.value = defaultQuickTodoDraft(settings.quickTodoDefaultTodayEnabled)
                 }
                 emitToast(if (isCreateMode) "已创建待办" else "已保存修改")
             }.onFailure { error ->
@@ -385,6 +406,18 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             settingsRepository.updateWidgetColorfulTextEnabled(value)
             widgetUpdater.refreshAll()
+        }
+    }
+
+    fun setQuickTodoDefaultTodayEnabled(value: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.updateQuickTodoDefaultTodayEnabled(value)
+            quickDraft.update { current ->
+                applyQuickDefaultDueDateIfSafe(
+                    draft = current,
+                    defaultTodayEnabled = value,
+                )
+            }
         }
     }
 
@@ -556,6 +589,38 @@ private data class PartialUiState(
 
 private fun AppSettings.hasCloudConfig(): Boolean =
     platformEnabled && platformUrl.normalizePlatformUrlOrDefault().isNotBlank() && apiKey.isNotBlank()
+
+private val QuickDraftZoneId: ZoneId = ZoneId.of("Asia/Shanghai")
+
+private fun defaultQuickTodoDraft(defaultTodayEnabled: Boolean): QuickTodoDraft {
+    val dueDate = if (defaultTodayEnabled) LocalDate.now(QuickDraftZoneId) else null
+    return QuickTodoDraft(dueDate = dueDate)
+}
+
+private fun applyQuickDefaultDueDateIfSafe(
+    draft: QuickTodoDraft,
+    defaultTodayEnabled: Boolean,
+): QuickTodoDraft {
+    if (!draft.isUntouchedForDefaultDueDate()) {
+        return draft
+    }
+    val today = LocalDate.now(QuickDraftZoneId)
+    if (draft.dueDate != null && draft.dueDate != today) {
+        return draft
+    }
+    val targetDueDate = if (defaultTodayEnabled) today else null
+    return if (draft.dueDate == targetDueDate) draft else draft.copy(dueDate = targetDueDate)
+}
+
+private fun QuickTodoDraft.isUntouchedForDefaultDueDate(): Boolean =
+    title.isBlank() &&
+        description.isBlank() &&
+        dueTimeText.isBlank() &&
+        priority == 0 &&
+        repeatType == RepeatType.NONE &&
+        repeatWeekday == null &&
+        repeatMonth == null &&
+        repeatDay == null
 
 private fun String.normalizePlatformUrl(): String = trim().trimEnd('/')
 

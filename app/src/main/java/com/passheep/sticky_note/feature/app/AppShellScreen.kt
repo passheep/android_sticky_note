@@ -192,6 +192,7 @@ fun StickyNoteAppShell(
     onSetWidgetThemeMode: (ThemeMode) -> Unit,
     onSetWidgetTransparency: (Float) -> Unit,
     onSetWidgetColorfulTextEnabled: (Boolean) -> Unit,
+    onSetQuickTodoDefaultTodayEnabled: (Boolean) -> Unit,
     onTestPlatformConnection: (String, String) -> Unit,
     onRefreshDevices: () -> Unit,
     onSelectDevice: (String) -> Unit,
@@ -358,6 +359,7 @@ fun StickyNoteAppShell(
                             onSetWidgetThemeMode = onSetWidgetThemeMode,
                             onSetWidgetTransparency = onSetWidgetTransparency,
                             onSetWidgetColorfulTextEnabled = onSetWidgetColorfulTextEnabled,
+                            onSetQuickTodoDefaultTodayEnabled = onSetQuickTodoDefaultTodayEnabled,
                             onTestPlatformConnection = onTestPlatformConnection,
                         )
                     }
@@ -1451,6 +1453,7 @@ private fun SettingsPage(
     onSetWidgetThemeMode: (ThemeMode) -> Unit,
     onSetWidgetTransparency: (Float) -> Unit,
     onSetWidgetColorfulTextEnabled: (Boolean) -> Unit,
+    onSetQuickTodoDefaultTodayEnabled: (Boolean) -> Unit,
     onTestPlatformConnection: (String, String) -> Unit,
 ) {
     var platformUrlText by rememberSaveable(uiState.platformUrl) { mutableStateOf(uiState.platformUrl) }
@@ -1542,6 +1545,27 @@ private fun SettingsPage(
                                 Text("${seconds}s")
                             }
                         }
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("新增待办默认今天", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "开启后底部新增输入框会默认带今天截止日期；关闭则默认不设置日期。",
+                                modifier = Modifier.padding(top = 4.dp),
+                                color = PanelTextSecondary,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        Switch(
+                            checked = uiState.quickTodoDefaultTodayEnabled,
+                            onCheckedChange = onSetQuickTodoDefaultTodayEnabled,
+                        )
                     }
                     Text(
                         text = "上次同步时间：${uiState.lastSyncAtMillis.toLastSyncLabel()}",

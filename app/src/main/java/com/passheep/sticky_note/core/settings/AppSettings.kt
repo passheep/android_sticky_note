@@ -16,6 +16,7 @@ data class AppSettings(
     val widgetColorfulTextEnabled: Boolean = true,
     val defaultPushType: PushType = PushType.STRUCTURED_TEXT,
     val defaultPushPageId: Int = 1,
+    val quickTodoDefaultTodayEnabled: Boolean = false,
 )
 
 enum class ThemeMode {

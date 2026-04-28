@@ -18,4 +18,5 @@ interface SettingsRepository {
     suspend fun updateWidgetColorfulTextEnabled(value: Boolean)
     suspend fun updateDefaultPushType(value: PushType)
     suspend fun updateDefaultPushPageId(value: Int)
+    suspend fun updateQuickTodoDefaultTodayEnabled(value: Boolean)
 }

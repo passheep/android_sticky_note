@@ -21,4 +21,5 @@ object PreferenceKeys {
     val WidgetColorfulTextEnabled = booleanPreferencesKey("widget_colorful_text_enabled")
     val DefaultPushType = stringPreferencesKey("default_push_type")
     val DefaultPushPageId = intPreferencesKey("default_push_page_id")
+    val QuickTodoDefaultTodayEnabled = booleanPreferencesKey("quick_todo_default_today_enabled")
 }

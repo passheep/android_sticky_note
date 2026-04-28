@@ -68,6 +68,7 @@ data class AppUiState(
     val selectedDeviceName: String? = null,
     val widgetTransparency: Float = 0.18f,
     val widgetColorfulTextEnabled: Boolean = true,
+    val quickTodoDefaultTodayEnabled: Boolean = false,
     val todos: List<Todo> = emptyList(),
     val devices: List<Device> = emptyList(),
     val todoFilter: TodoFilter = TodoFilter.ALL,
