@@ -41,6 +41,32 @@
                 android:resource="@xml/sticky_note_widget_info" />
         </receiver>
 
+        <receiver
+            android:name=".widget.StickyNoteWidget4x2Receiver"
+            android:exported="true"
+            android:label="@string/widget_name_4x2">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/sticky_note_widget_info_4x2" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.StickyNoteWidget4x4Receiver"
+            android:exported="true"
+            android:label="@string/widget_name_4x4">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/sticky_note_widget_info_4x4" />
+        </receiver>
+
         <service
             android:name=".widget.StickyNoteWidgetListService"
             android:exported="false"

@@ -34,6 +34,7 @@ interface DisplayApiService {
         @Part images: List<MultipartBody.Part>,
         @Part("dither") dither: RequestBody? = null,
         @Part("pageId") pageId: RequestBody? = null,
+        @Part("bitDepth") bitDepth: RequestBody? = null,
     ): ApiEnvelope<DisplayResponse>
 
     @DELETE("/open/v1/devices/{deviceId}/display/pages/{pageId}")

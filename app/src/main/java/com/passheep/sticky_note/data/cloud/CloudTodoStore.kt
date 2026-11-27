@@ -18,13 +18,15 @@ import com.passheep.sticky_note.data.remote.dto.RemoteTodoDto
 import com.passheep.sticky_note.data.remote.dto.UpdateTodoRequest
 import com.passheep.sticky_note.data.remote.toEpochMillis
 import com.passheep.sticky_note.widget.WidgetUpdater
+import java.time.LocalDate
+import java.time.LocalTime
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -119,7 +121,8 @@ class CloudTodoStore @Inject constructor(
     suspend fun updateTodo(remoteId: Long, input: TodoDraftInput): Todo = todoMutex.withLock {
         val settings = settingsRepository.settings.first()
         ensureCloudReady(settings.platformEnabled, settings.platformUrl, settings.apiKey)
-        val existing = fetchTodosFromApi(settings.selectedDeviceId).firstOrNull { it.remoteId == remoteId }
+        val existing = mutableTodos.value.firstOrNull { it.remoteId == remoteId }
+            ?: fetchTodosFromApi(settings.selectedDeviceId).firstOrNull { it.remoteId == remoteId }
         if (existing.shouldRecreateForClearedSchedule(input)) {
             Log.d(TAG, "updateTodo recreate_for_schedule_clear remoteId=$remoteId")
             return recreateTodoForClearedSchedule(
@@ -135,29 +138,61 @@ class CloudTodoStore @Inject constructor(
         updated
     }
 
+    /**
+     * 切换待办完成态：先本地乐观更新以即时触发丝滑完成与位移动画，请求失败自动回滚
+     */
     suspend fun toggleCompleted(remoteId: Long) = todoMutex.withLock {
         val settings = settingsRepository.settings.first()
         ensureCloudReady(settings.platformEnabled, settings.platformUrl, settings.apiKey)
-        val currentCompleted = fetchTodosFromApi(settings.selectedDeviceId)
-            .firstOrNull { it.remoteId == remoteId }
-            ?.completed
-        val expectedCompleted = currentCompleted?.not()
-        Log.d(TAG, "toggleCompleted remoteId=$remoteId")
-        todoApiService.toggleComplete(remoteId).ensureSuccess()
-        refreshTodosLockedWithConsistency(
-            reason = "toggle_after_mutation",
-            settingsDeviceId = settings.selectedDeviceId,
-            expectedRemoteId = remoteId,
-            expectedCompleted = expectedCompleted,
-        )
+        val snapshotBefore = mutableTodos.value
+        val existing = snapshotBefore.firstOrNull { it.remoteId == remoteId }
+            ?: fetchTodosFromApi(settings.selectedDeviceId).firstOrNull { it.remoteId == remoteId }
+        val expectedCompleted = existing?.completed?.not()
+
+        if (expectedCompleted != null && snapshotBefore.isNotEmpty()) {
+            mutableTodos.value = snapshotBefore.map { item ->
+                if (item.remoteId == remoteId) {
+                    item.copy(
+                        completed = expectedCompleted,
+                        status = if (expectedCompleted) TodoStatus.COMPLETED else TodoStatus.TODO,
+                    )
+                } else {
+                    item
+                }
+            }
+        }
+
+        Log.d(TAG, "toggleCompleted remoteId=$remoteId expectedCompleted=$expectedCompleted")
+        runCatching {
+            todoApiService.toggleComplete(remoteId).ensureSuccess()
+            refreshTodosLockedWithConsistency(
+                reason = "toggle_after_mutation",
+                settingsDeviceId = settings.selectedDeviceId,
+                expectedRemoteId = remoteId,
+                expectedCompleted = expectedCompleted,
+            )
+        }.onFailure { error ->
+            mutableTodos.value = snapshotBefore
+            throw error
+        }
     }
 
+    /**
+     * 删除待办：先本地乐观移除提升交互响应速度，失败自动回滚
+     */
     suspend fun deleteTodo(remoteId: Long) = todoMutex.withLock {
         val settings = settingsRepository.settings.first()
         ensureCloudReady(settings.platformEnabled, settings.platformUrl, settings.apiKey)
+        val snapshotBefore = mutableTodos.value
+        mutableTodos.value = snapshotBefore.filterNot { it.remoteId == remoteId }
         Log.d(TAG, "deleteTodo remoteId=$remoteId")
-        todoApiService.deleteTodo(remoteId).ensureSuccess()
-        refreshTodosLocked(reason = "delete_after_mutation", settingsDeviceId = settings.selectedDeviceId)
+        runCatching {
+            todoApiService.deleteTodo(remoteId).ensureSuccess()
+            refreshTodosLocked(reason = "delete_after_mutation", settingsDeviceId = settings.selectedDeviceId)
+        }.onFailure { error ->
+            mutableTodos.value = snapshotBefore
+            throw error
+        }
     }
 
     suspend fun snapshotTodos(limit: Int): List<Todo> {
@@ -263,20 +298,20 @@ class CloudTodoStore @Inject constructor(
     }
 
     private fun RemoteTodoDto.toCloudTodo(): Todo {
-        val statusModel = if (completed || status == 1) TodoStatus.COMPLETED else TodoStatus.TODO
+        val statusModel = if (completed == true || status == 1) TodoStatus.COMPLETED else TodoStatus.TODO
         val remoteUpdatedAtMillis = updateDate.toEpochMillis() ?: System.currentTimeMillis()
         return Todo(
             localId = "remote-$id",
             remoteId = id,
             title = title,
             description = description.orEmpty(),
-            dueDate = dueDate?.takeIf { it.isNotBlank() }?.let(java.time.LocalDate::parse),
-            dueTime = dueTime?.takeIf { it.isNotBlank() }?.let(java.time.LocalTime::parse),
+            dueDate = dueDate?.takeIf { it.isNotBlank() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
+            dueTime = dueTime?.takeIf { it.isNotBlank() }?.let { runCatching { LocalTime.parse(it) }.getOrNull() },
             repeatType = repeatType.orEmpty().toRepeatType(),
             repeatWeekday = repeatWeekday,
             repeatMonth = repeatMonth,
             repeatDay = repeatDay,
-            priority = priority,
+            priority = (priority ?: 0).coerceIn(0, 2),
             status = statusModel,
             completed = statusModel == TodoStatus.COMPLETED,
             deviceId = deviceId,
@@ -310,32 +345,36 @@ class CloudTodoStore @Inject constructor(
         RepeatType.YEARLY -> "yearly"
     }
 
-    private fun RepeatType?.toApiValueOrEmpty(): String = this?.toApiValue().orEmpty()
-
     private fun TodoDraftInput.toCreateRequest(settingsDeviceId: String?): CreateTodoRequest = CreateTodoRequest(
         title = title.trim(),
-        description = description.trim(),
-        dueDate = dueDate?.toString().orEmpty(),
-        dueTime = dueTime?.toString().orEmpty(),
-        repeatType = repeatType.toApiValueOrEmpty(),
-        repeatWeekday = toApiRepeatWeekday(),
-        repeatMonth = toApiRepeatMonth(),
-        repeatDay = toApiRepeatDay(),
+        description = description.trim().takeIf { it.isNotEmpty() },
+        dueDate = dueDate?.toString(),
+        dueTime = dueTime?.toString(),
+        repeatType = repeatType?.toApiValue(),
+        repeatWeekday = if (repeatType == RepeatType.WEEKLY) repeatWeekday else null,
+        repeatMonth = if (repeatType == RepeatType.YEARLY) repeatMonth else null,
+        repeatDay = when (repeatType) {
+            RepeatType.MONTHLY, RepeatType.YEARLY -> repeatDay
+            else -> null
+        },
         priority = priority.coerceIn(0, 2),
-        deviceId = deviceId ?: settingsDeviceId.orEmpty(),
+        deviceId = (deviceId ?: settingsDeviceId)?.takeIf { it.isNotBlank() },
     )
 
     private fun TodoDraftInput.toUpdateRequest(settingsDeviceId: String?): UpdateTodoRequest = UpdateTodoRequest(
         title = title.trim(),
         description = description.trim(),
-        dueDate = dueDate?.toString().orEmpty(),
-        dueTime = dueTime?.toString().orEmpty(),
-        repeatType = repeatType.toApiValueOrEmpty(),
-        repeatWeekday = toApiRepeatWeekday(),
-        repeatMonth = toApiRepeatMonth(),
-        repeatDay = toApiRepeatDay(),
+        dueDate = dueDate?.toString(),
+        dueTime = dueTime?.toString(),
+        repeatType = repeatType?.toApiValue(),
+        repeatWeekday = if (repeatType == RepeatType.WEEKLY) repeatWeekday else null,
+        repeatMonth = if (repeatType == RepeatType.YEARLY) repeatMonth else null,
+        repeatDay = when (repeatType) {
+            RepeatType.MONTHLY, RepeatType.YEARLY -> repeatDay
+            else -> null
+        },
         priority = priority.coerceIn(0, 2),
-        deviceId = deviceId ?: settingsDeviceId.orEmpty(),
+        deviceId = (deviceId ?: settingsDeviceId)?.takeIf { it.isNotBlank() },
     )
 
     private fun Todo?.shouldRecreateForClearedSchedule(input: TodoDraftInput): Boolean {
@@ -345,19 +384,7 @@ class CloudTodoStore @Inject constructor(
         return clearedDate || clearedTime
     }
 
-    private fun TodoDraftInput.toApiRepeatWeekday(): String =
-        if (repeatType == RepeatType.WEEKLY) (repeatWeekday?.toString().orEmpty()) else ""
-
-    private fun TodoDraftInput.toApiRepeatMonth(): String =
-        if (repeatType == RepeatType.YEARLY) (repeatMonth?.toString().orEmpty()) else ""
-
-    private fun TodoDraftInput.toApiRepeatDay(): String = when (repeatType) {
-        RepeatType.MONTHLY, RepeatType.YEARLY -> repeatDay?.toString().orEmpty()
-        else -> ""
-    }
-
     private companion object {
         const val TAG = "StickyNoteCloud"
     }
 }
-

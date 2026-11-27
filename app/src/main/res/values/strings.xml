@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">智能便利贴</string>
-    <string name="widget_name">智能便利贴小组件</string>
+    <string name="widget_name">智能便利贴 (2×2)</string>
+    <string name="widget_name_4x2">智能便利贴 (4×2)</string>
+    <string name="widget_name_4x4">智能便利贴 (4×4)</string>
 </resources>

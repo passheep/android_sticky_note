@@ -6,10 +6,15 @@ import androidx.lifecycle.viewModelScope
 import com.passheep.sticky_note.core.model.RepeatType
 import com.passheep.sticky_note.core.model.Todo
 import com.passheep.sticky_note.core.model.TodoDraftInput
+import com.passheep.sticky_note.core.settings.AppAccentTheme
+import com.passheep.sticky_note.core.settings.AppBackgroundStyle
 import com.passheep.sticky_note.core.settings.AppSettings
 import com.passheep.sticky_note.core.settings.DEFAULT_PLATFORM_URL
+import com.passheep.sticky_note.core.settings.DefaultTodoFilter
 import com.passheep.sticky_note.core.settings.SettingsRepository
 import com.passheep.sticky_note.core.settings.ThemeMode
+import com.passheep.sticky_note.core.settings.WidgetColorTheme
+import com.passheep.sticky_note.core.settings.WidgetStylePreset
 import com.passheep.sticky_note.data.cloud.CloudTodoStore
 import com.passheep.sticky_note.data.sync.SyncScheduler
 import com.passheep.sticky_note.feature.app.AppRoute
@@ -18,6 +23,7 @@ import com.passheep.sticky_note.feature.app.MainEvent
 import com.passheep.sticky_note.feature.app.QuickTodoDraft
 import com.passheep.sticky_note.feature.app.TodoEditDraft
 import com.passheep.sticky_note.feature.app.TodoFilter
+import com.passheep.sticky_note.feature.app.toTodoFilter
 import com.passheep.sticky_note.widget.WidgetUpdater
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Instant
@@ -94,7 +100,11 @@ class MainViewModel @Inject constructor(
             val (partial, isRefreshingDevices, isTesting) = triple
             AppUiState(
                 themeMode = partial.settings.themeMode,
+                backgroundStyle = partial.settings.backgroundStyle,
+                accentTheme = partial.settings.accentTheme,
                 widgetThemeMode = partial.settings.widgetThemeMode,
+                widgetStylePreset = partial.settings.widgetStylePreset,
+                widgetColorTheme = partial.settings.widgetColorTheme,
                 platformEnabled = partial.settings.platformEnabled,
                 platformUrl = partial.settings.platformUrl,
                 apiKey = partial.settings.apiKey,
@@ -105,6 +115,9 @@ class MainViewModel @Inject constructor(
                 widgetTransparency = partial.settings.widgetTransparency,
                 widgetColorfulTextEnabled = partial.settings.widgetColorfulTextEnabled,
                 quickTodoDefaultTodayEnabled = partial.settings.quickTodoDefaultTodayEnabled,
+                defaultTodoFilter = partial.settings.defaultTodoFilter,
+                widgetDefaultFilter = partial.settings.widgetDefaultFilter,
+                widgetActiveFilter = partial.settings.widgetActiveFilter,
                 todos = partial.todos,
                 devices = partial.devices,
                 todoFilter = partial.filter,
@@ -123,6 +136,11 @@ class MainViewModel @Inject constructor(
     )
 
     init {
+        viewModelScope.launch {
+            // 冷启动时加载用户配置的首页默认筛选分类
+            val initialFilter = settingsRepository.settings.first().defaultTodoFilter.toTodoFilter()
+            todoFilter.value = initialFilter
+        }
         viewModelScope.launch {
             settingsRepository.settings
                 .map { it.quickTodoDefaultTodayEnabled }
@@ -222,9 +240,10 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             Log.d(TAG, "submitQuickTodo title=${draft.title}")
             runCatching { cloudTodoStore.createTodo(input) }
-                .onSuccess {
+                .onSuccess { created ->
                     val settings = settingsRepository.settings.first()
                     quickDraft.value = defaultQuickTodoDraft(settings.quickTodoDefaultTodayEnabled)
+                    ensureTodoVisibleAndScroll(created.localId, created.completed)
                     emitToast("已创建待办")
                 }
                 .onFailure { error ->
@@ -288,12 +307,13 @@ class MainViewModel @Inject constructor(
                 } else {
                     cloudTodoStore.updateTodo(requireNotNull(draft.remoteId), input)
                 }
-            }.onSuccess {
+            }.onSuccess { savedTodo ->
                 editDraft.value = null
                 if (draft.isFromQuickComposer) {
                     val settings = settingsRepository.settings.first()
                     quickDraft.value = defaultQuickTodoDraft(settings.quickTodoDefaultTodayEnabled)
                 }
+                ensureTodoVisibleAndScroll(savedTodo.localId, savedTodo.completed)
                 emitToast(if (isCreateMode) "已创建待办" else "已保存修改")
             }.onFailure { error ->
                 Log.e(TAG, "saveTodoEditor failed remoteId=${draft.remoteId}", error)
@@ -328,6 +348,36 @@ class MainViewModel @Inject constructor(
                 .onFailure { error ->
                     Log.e(TAG, "deleteTodo failed remoteId=$remoteId", error)
                     emitToast(error.toUserMessage("删除失败"))
+                }
+        }
+    }
+
+    /**
+     * 复制一条与原待办内容、日程、优先级和重复规则完全相同的新待办，并滚动定位至新条目
+     */
+    fun copyTodo(todo: Todo) {
+        val input = TodoDraftInput(
+            title = todo.title.trim(),
+            description = todo.description.trim(),
+            dueDate = todo.dueDate,
+            dueTime = todo.dueTime,
+            repeatType = todo.repeatType,
+            repeatWeekday = todo.repeatWeekday,
+            repeatMonth = todo.repeatMonth,
+            repeatDay = todo.repeatDay,
+            priority = todo.priority.coerceIn(0, 2),
+            deviceId = todo.deviceId,
+        )
+        viewModelScope.launch {
+            Log.d(TAG, "copyTodo sourceLocalId=${todo.localId}")
+            runCatching { cloudTodoStore.createTodo(input) }
+                .onSuccess { created ->
+                    ensureTodoVisibleAndScroll(created.localId, created.completed)
+                    emitToast("已复制待办")
+                }
+                .onFailure { error ->
+                    Log.e(TAG, "copyTodo failed sourceLocalId=${todo.localId}", error)
+                    emitToast(error.toUserMessage("复制失败，请检查网络或密钥"))
                 }
         }
     }
@@ -388,9 +438,50 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 更新应用背景材质样式（暖纸/纯白/方格/点阵）
+     */
+    fun setBackgroundStyle(value: AppBackgroundStyle) {
+        viewModelScope.launch {
+            settingsRepository.updateBackgroundStyle(value)
+        }
+    }
+
+    /**
+     * 更新应用暖纸墨韵主题强调色；若小组件主题设为跟随 App 则同步刷新桌面小组件
+     */
+    fun setAccentTheme(value: AppAccentTheme) {
+        viewModelScope.launch {
+            settingsRepository.updateAccentTheme(value)
+            if (settingsRepository.settings.first().widgetColorTheme == WidgetColorTheme.FOLLOW_APP) {
+                widgetUpdater.refreshAll()
+            }
+        }
+    }
+
     fun setWidgetThemeMode(value: ThemeMode) {
         viewModelScope.launch {
             settingsRepository.updateWidgetThemeMode(value)
+            widgetUpdater.refreshAll()
+        }
+    }
+
+    /**
+     * 更新桌面小组件风格（经典/暖纸/便利贴/墨水屏）
+     */
+    fun setWidgetStylePreset(value: WidgetStylePreset) {
+        viewModelScope.launch {
+            settingsRepository.updateWidgetStylePreset(value)
+            widgetUpdater.refreshAll()
+        }
+    }
+
+    /**
+     * 更新桌面小组件配色主题
+     */
+    fun setWidgetColorTheme(value: WidgetColorTheme) {
+        viewModelScope.launch {
+            settingsRepository.updateWidgetColorTheme(value)
             widgetUpdater.refreshAll()
         }
     }
@@ -418,6 +509,26 @@ class MainViewModel @Inject constructor(
                     defaultTodayEnabled = value,
                 )
             }
+        }
+    }
+
+    /**
+     * 更新首页默认展示的筛选分类，并同步切换当前首页选中 Tab
+     */
+    fun setDefaultTodoFilter(value: DefaultTodoFilter) {
+        todoFilter.value = value.toTodoFilter()
+        viewModelScope.launch {
+            settingsRepository.updateDefaultTodoFilter(value)
+        }
+    }
+
+    /**
+     * 更新桌面小组件默认展示的筛选分类，并立即刷新桌面小组件
+     */
+    fun setWidgetDefaultFilter(value: DefaultTodoFilter) {
+        viewModelScope.launch {
+            settingsRepository.updateWidgetDefaultFilter(value)
+            widgetUpdater.refreshAll()
         }
     }
 
@@ -564,6 +675,16 @@ class MainViewModel @Inject constructor(
         devices.firstOrNull { it.deviceId == selectedDeviceId }?.alias?.let { alias ->
             settingsRepository.updateSelectedDeviceName(alias)
         }
+    }
+
+    private fun ensureTodoVisibleAndScroll(localId: String, isCompleted: Boolean) {
+        val current = todoFilter.value
+        val hiddenByFilter = (current == TodoFilter.COMPLETED && !isCompleted) ||
+            (current == TodoFilter.ACTIVE && isCompleted)
+        if (hiddenByFilter) {
+            todoFilter.value = TodoFilter.ALL
+        }
+        mutableEvents.tryEmit(MainEvent.ScrollToTodo(localId))
     }
 
     private fun emitToast(message: String) {

@@ -1,10 +1,16 @@
 package com.passheep.sticky_note.feature.app
 
+import androidx.compose.runtime.Immutable
 import com.passheep.sticky_note.core.model.Device
 import com.passheep.sticky_note.core.model.RepeatType
 import com.passheep.sticky_note.core.model.Todo
+import com.passheep.sticky_note.core.settings.AppAccentTheme
+import com.passheep.sticky_note.core.settings.AppBackgroundStyle
 import com.passheep.sticky_note.core.settings.DEFAULT_PLATFORM_URL
+import com.passheep.sticky_note.core.settings.DefaultTodoFilter
 import com.passheep.sticky_note.core.settings.ThemeMode
+import com.passheep.sticky_note.core.settings.WidgetColorTheme
+import com.passheep.sticky_note.core.settings.WidgetStylePreset
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -26,6 +32,13 @@ enum class TodoFilter {
     COMPLETED,
 }
 
+fun DefaultTodoFilter.toTodoFilter(): TodoFilter = when (this) {
+    DefaultTodoFilter.ALL -> TodoFilter.ALL
+    DefaultTodoFilter.ACTIVE -> TodoFilter.ACTIVE
+    DefaultTodoFilter.COMPLETED -> TodoFilter.COMPLETED
+}
+
+@Immutable
 data class QuickTodoDraft(
     val title: String = "",
     val description: String = "",
@@ -38,6 +51,7 @@ data class QuickTodoDraft(
     val repeatDay: Int? = null,
 )
 
+@Immutable
 data class TodoEditDraft(
     val localId: String? = null,
     val remoteId: Long? = null,
@@ -56,9 +70,14 @@ data class TodoEditDraft(
     val isFromQuickComposer: Boolean = false,
 )
 
+@Immutable
 data class AppUiState(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val backgroundStyle: AppBackgroundStyle = AppBackgroundStyle.PAPER,
+    val accentTheme: AppAccentTheme = AppAccentTheme.INK_GREEN,
     val widgetThemeMode: ThemeMode = ThemeMode.SYSTEM,
+    val widgetStylePreset: WidgetStylePreset = WidgetStylePreset.PAPER,
+    val widgetColorTheme: WidgetColorTheme = WidgetColorTheme.FOLLOW_APP,
     val platformEnabled: Boolean = false,
     val platformUrl: String = DEFAULT_PLATFORM_URL,
     val apiKey: String = "",
@@ -69,6 +88,9 @@ data class AppUiState(
     val widgetTransparency: Float = 0.18f,
     val widgetColorfulTextEnabled: Boolean = true,
     val quickTodoDefaultTodayEnabled: Boolean = false,
+    val defaultTodoFilter: DefaultTodoFilter = DefaultTodoFilter.ALL,
+    val widgetDefaultFilter: DefaultTodoFilter = DefaultTodoFilter.ALL,
+    val widgetActiveFilter: DefaultTodoFilter = DefaultTodoFilter.ALL,
     val todos: List<Todo> = emptyList(),
     val devices: List<Device> = emptyList(),
     val todoFilter: TodoFilter = TodoFilter.ALL,
@@ -100,4 +122,5 @@ data class AppUiState(
 sealed interface MainEvent {
     data class Toast(val message: String) : MainEvent
     data class Navigate(val route: String) : MainEvent
+    data class ScrollToTodo(val localId: String) : MainEvent
 }

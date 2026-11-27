@@ -27,19 +27,19 @@ fun RemoteTodoDto.toModel(
     now: Long = System.currentTimeMillis(),
 ): Todo {
     val remoteUpdatedAtMillis = updateDate.toEpochMillis() ?: now
-    val statusModel = if (completed || status == 1) TodoStatus.COMPLETED else TodoStatus.TODO
+    val statusModel = if (completed == true || status == 1) TodoStatus.COMPLETED else TodoStatus.TODO
     return Todo(
         localId = existing?.localId ?: UUID.randomUUID().toString(),
         remoteId = id,
         title = title,
         description = description.orEmpty(),
-        dueDate = dueDate?.takeIf { it.isNotBlank() }?.let(LocalDate::parse),
-        dueTime = dueTime?.takeIf { it.isNotBlank() }?.let(LocalTime::parse),
+        dueDate = dueDate?.takeIf { it.isNotBlank() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
+        dueTime = dueTime?.takeIf { it.isNotBlank() }?.let { runCatching { LocalTime.parse(it) }.getOrNull() },
         repeatType = repeatType.orEmpty().toRepeatType(),
         repeatWeekday = repeatWeekday,
         repeatMonth = repeatMonth,
         repeatDay = repeatDay,
-        priority = priority,
+        priority = (priority ?: 0).coerceIn(0, 2),
         status = statusModel,
         completed = statusModel == TodoStatus.COMPLETED,
         deviceId = deviceId,
@@ -59,34 +59,34 @@ fun RemoteTodoDto.toModel(
 
 fun Todo.toCreateRequest(): CreateTodoRequest = CreateTodoRequest(
     title = title,
-    description = description,
-    dueDate = dueDate?.toString().orEmpty(),
-    dueTime = dueTime?.toString().orEmpty(),
+    description = description.takeIf { it.isNotBlank() },
+    dueDate = dueDate?.toString(),
+    dueTime = dueTime?.toString(),
     repeatType = repeatType.toApiValue(),
-    repeatWeekday = if (repeatType == RepeatType.WEEKLY) repeatWeekday?.toString().orEmpty() else "",
-    repeatMonth = if (repeatType == RepeatType.YEARLY) repeatMonth?.toString().orEmpty() else "",
+    repeatWeekday = if (repeatType == RepeatType.WEEKLY) repeatWeekday else null,
+    repeatMonth = if (repeatType == RepeatType.YEARLY) repeatMonth else null,
     repeatDay = when (repeatType) {
-        RepeatType.MONTHLY, RepeatType.YEARLY -> repeatDay?.toString().orEmpty()
-        else -> ""
+        RepeatType.MONTHLY, RepeatType.YEARLY -> repeatDay
+        else -> null
     },
-    priority = priority,
-    deviceId = deviceId.orEmpty(),
+    priority = priority.coerceIn(0, 2),
+    deviceId = deviceId?.takeIf { it.isNotBlank() },
 )
 
 fun Todo.toUpdateRequest(): UpdateTodoRequest = UpdateTodoRequest(
     title = title,
     description = description,
-    dueDate = dueDate?.toString().orEmpty(),
-    dueTime = dueTime?.toString().orEmpty(),
+    dueDate = dueDate?.toString(),
+    dueTime = dueTime?.toString(),
     repeatType = repeatType.toApiValue(),
-    repeatWeekday = if (repeatType == RepeatType.WEEKLY) repeatWeekday?.toString().orEmpty() else "",
-    repeatMonth = if (repeatType == RepeatType.YEARLY) repeatMonth?.toString().orEmpty() else "",
+    repeatWeekday = if (repeatType == RepeatType.WEEKLY) repeatWeekday else null,
+    repeatMonth = if (repeatType == RepeatType.YEARLY) repeatMonth else null,
     repeatDay = when (repeatType) {
-        RepeatType.MONTHLY, RepeatType.YEARLY -> repeatDay?.toString().orEmpty()
-        else -> ""
+        RepeatType.MONTHLY, RepeatType.YEARLY -> repeatDay
+        else -> null
     },
-    priority = priority,
-    deviceId = deviceId.orEmpty(),
+    priority = priority.coerceIn(0, 2),
+    deviceId = deviceId?.takeIf { it.isNotBlank() },
 )
 
 fun Long?.toEpochMillis(): Long? {

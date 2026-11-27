@@ -1,9 +1,9 @@
 package com.passheep.sticky_note.data.settings
 
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
-import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 
 object PreferenceKeys {
@@ -16,10 +16,17 @@ object PreferenceKeys {
     val SelectedDeviceId = stringPreferencesKey("selected_device_id")
     val SelectedDeviceName = stringPreferencesKey("selected_device_name")
     val ThemeMode = stringPreferencesKey("theme_mode")
+    val BackgroundStyle = stringPreferencesKey("background_style")
+    val AccentTheme = stringPreferencesKey("accent_theme")
     val WidgetThemeMode = stringPreferencesKey("widget_theme_mode")
+    val WidgetStylePreset = stringPreferencesKey("widget_style_preset")
+    val WidgetColorTheme = stringPreferencesKey("widget_color_theme")
     val WidgetTransparency = floatPreferencesKey("widget_transparency")
     val WidgetColorfulTextEnabled = booleanPreferencesKey("widget_colorful_text_enabled")
     val DefaultPushType = stringPreferencesKey("default_push_type")
     val DefaultPushPageId = intPreferencesKey("default_push_page_id")
     val QuickTodoDefaultTodayEnabled = booleanPreferencesKey("quick_todo_default_today_enabled")
+    val DefaultTodoFilter = stringPreferencesKey("default_todo_filter")
+    val WidgetDefaultFilter = stringPreferencesKey("widget_default_filter")
+    val WidgetActiveFilter = stringPreferencesKey("widget_active_filter")
 }

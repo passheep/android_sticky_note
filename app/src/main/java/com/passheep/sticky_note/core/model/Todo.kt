@@ -1,8 +1,10 @@
 package com.passheep.sticky_note.core.model
 
+import androidx.compose.runtime.Immutable
 import java.time.LocalDate
 import java.time.LocalTime
 
+@Immutable
 data class Todo(
     val localId: String,
     val remoteId: Long?,
